@@ -56,20 +56,20 @@ The project includes a dataset generator to ensure that both approaches run on t
 ### Generating the Dataset
 To generate a common dataset for both approaches, run:
 ```bash
-    ./dataset_gen
+./dataset_gen
 ```
 This will create a file called `dataset.txt in the` project root. Both the traditional and hybrid programs read from this file.
 
 ### Running the Approaches
 
 1. Traditional Approach:
-   ```bash
-   ./traditional
-   ```
+```bash
+./traditional
+```
 2. Hybrid Approach (Immediate Learning):
-   ```bash
-   ./hybrid_immediate
-   ```
+```bash
+./hybrid_immediate
+```
 
 Both programs will output metrics such as the number of slow-path triggers and the total processing time.
 
