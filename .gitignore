@@ -1,0 +1,9 @@
+# Build output
+/build/
+*.o
+*.exe
+*.out
+
+# Editor files
+*~
+*.swp
