@@ -3,9 +3,9 @@
 #include <time.h>
 
 // Configuration for certain parameters
-#define NUM_PACKETS 1000000 // Total number of packets that's going to be simulated
-#define KNOWN_FLOW_SIZE 1000 // Total known number of flows in table
-#define IP_RANGE 20000 // IP address range from (0 - IP_RANGE - 1 in this case 0 - 19999)
+static int NUM_PACKETS; // Total number of packets that's going to be simulated
+static int KNOWN_FLOWS_SIZE; // Total known number of flows in table
+static int IP_RANGE; // IP address range from (0 - IP_RANGE - 1 in this case 0 - 19999)
 
 
 // Simulated "expensive" operation (i.e the slow path)
@@ -28,7 +28,7 @@ void fast_path_action(int ip) {
 // Check if ip is in the known flows table (linear search)
 
 int is_known_flow(int ip, int* known_flows) {
-    for(int i = 0; i < KNOWN_FLOW_SIZE; i++) {
+    for(int i = 0; i < KNOWN_FLOWS_SIZE; i++) {
         if(known_flows[i] == ip) {
             return 1;
         }
@@ -37,29 +37,49 @@ int is_known_flow(int ip, int* known_flows) {
 }
 
 int main() {
-    srand((unsigned) time(NULL));
-
-    // For test generate random table of known flows
-    int *known_flows = (int *)malloc(KNOWN_FLOW_SIZE * sizeof(int));
-    for(int i = 0; i < KNOWN_FLOW_SIZE; i++) {
-        known_flows[i] = rand() % IP_RANGE;
+      // Read from dataset.txt
+    FILE *fp = fopen("dataset.txt", "r");
+    if (!fp) {
+        perror("Error opening dataset.txt");
+        return 1;
     }
 
-    // Similary we will generate random packets 
-    int *packets = (int *)malloc(NUM_PACKETS*sizeof(int));
-    for(int i = 0; i < NUM_PACKETS; i++) {
-        packets[i] = rand() % IP_RANGE;
+    // 1) Read basic info
+    if (fscanf(fp, "%d %d %d", &KNOWN_FLOWS_SIZE, &NUM_PACKETS, &IP_RANGE) != 3) {
+        fprintf(stderr, "Error reading dataset header\n");
+        fclose(fp);
+        return 1;
     }
 
+    // 2) Read known flows
+    int *known_flows = (int *)malloc(KNOWN_FLOWS_SIZE * sizeof(int));
+    for (int i = 0; i < KNOWN_FLOWS_SIZE; i++) {
+        if (fscanf(fp, "%d", &known_flows[i]) != 1) {
+            fprintf(stderr, "Error reading known_flows\n");
+            fclose(fp);
+            return 1;
+        }
+    }
 
+    // 3) Read packets
+    int *packets = (int *)malloc(NUM_PACKETS * sizeof(int));
+    for (int i = 0; i < NUM_PACKETS; i++) {
+        if (fscanf(fp, "%d", &packets[i]) != 1) {
+            fprintf(stderr, "Error reading packets\n");
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+
+    // Metrics
     long long slow_path_count = 0;
     clock_t start = clock();
 
-
-    // Process Packets 
-    for(int i = 0; i < NUM_PACKETS; i++) {
+    // Process packets
+    for (int i = 0; i < NUM_PACKETS; i++) {
         int ip = packets[i];
-        if(is_known_flow(ip, known_flows)) {
+        if (is_known_flow(ip, known_flows)) {
             fast_path_action(ip);
         } else {
             deep_inspection(ip);
@@ -71,13 +91,12 @@ int main() {
     double total_time = (double)(end - start) / CLOCKS_PER_SEC;
 
     printf("=== Traditional Approach ===\n");
-    printf("Total packets processed: %d\n", NUM_PACKETS);
-    printf("Known flows size: %d\n", KNOWN_FLOW_SIZE);
+    printf("Dataset: KNOWN_FLOWS_SIZE=%d, NUM_PACKETS=%d, IP_RANGE=%d\n",
+           KNOWN_FLOWS_SIZE, NUM_PACKETS, IP_RANGE);
     printf("Slow path triggered: %lld times\n", slow_path_count);
     printf("Total time taken: %.3f seconds\n", total_time);
 
     free(known_flows);
     free(packets);
-
-    return 0;
+    return 0;  
 }
