@@ -68,11 +68,11 @@ int main() {
     }
 
     clock_t end = clock();
-    double total_time = (double)(end - start) / CLOCLS_PER_SEC;
+    double total_time = (double)(end - start) / CLOCKS_PER_SEC;
 
     printf("=== Traditional Approach ===\n");
     printf("Total packets processed: %d\n", NUM_PACKETS);
-    printf("Known flows size: %d\n", KNOWN_FLOWS_SIZE);
+    printf("Known flows size: %d\n", KNOWN_FLOW_SIZE);
     printf("Slow path triggered: %lld times\n", slow_path_count);
     printf("Total time taken: %.3f seconds\n", total_time);
 
