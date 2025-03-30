@@ -91,3 +91,7 @@ Both approaches print out:
     - The number of slow path triggers.
     - Total time taken.
     - Other configuration details (e.g., dataset size).
+
+
+### References
+[The Slow Path Needs an Accelerator](https://dl.acm.org/doi/10.1145/3594255.3594259)
