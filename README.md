@@ -38,7 +38,7 @@ The project includes a dataset generator to ensure that both approaches run on t
 
 1. **Clone the Repository:**
    ```bash
-   git clone <repository-url> DynaFlow
+   git clone https://github.com/shreeshjha/DynaFlow.git
    cd DynaFlow
    ```
 2. Create a Build Directory and Build:
