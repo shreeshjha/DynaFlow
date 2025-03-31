@@ -92,6 +92,48 @@ Both approaches print out:
     - Total time taken.
     - Other configuration details (e.g., dataset size).
 
+## Benchmark Results
+
+Performance testing was conducted by running each implementation 10 times on `dataset.txt`.
+
+### Traditional Slow-Fast Path
+
+```
+            Mean        Std.Dev.    Min         Median      Max
+real        12.831      0.075       12.763      12.807      13.004
+user        12.782      0.033       12.744      12.774      12.850
+sys         0.026       0.006       0.018       0.025       0.037
+```
+
+### Hybrid Slow-Fast Path
+
+```
+            Mean        Std.Dev.    Min         Median      Max
+real        12.556      0.073       12.430      12.547      12.718
+user        12.503      0.041       12.400      12.514      12.544
+sys         0.031       0.012       0.015       0.030       0.057
+```
+
+## Performance Comparison
+
+The hybrid slow-fast path implementation shows a **2.14%** improvement in real execution time compared to the traditional approach:
+- Traditional implementation: 12.831s mean execution time
+- Hybrid implementation: 12.556s mean execution time
+
+## Usage
+
+To run the benchmarks yourself:
+For benchmarking (not ideal benchmark) I am using [Multitime](https://tratt.net/laurie/src/multitime/releases.html)
+
+```bash
+cd build
+# Run traditional implementation for n = 10 (example)
+multitime -n 10 ./traditional
+
+# Run hybrid implementation
+multitime -n 10 ./hybrid_immediate
+```
+
 
 ### References
 [The Slow Path Needs an Accelerator](https://dl.acm.org/doi/10.1145/3594255.3594259)
