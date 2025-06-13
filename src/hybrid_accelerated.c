@@ -1,12 +1,12 @@
 #include <assert.h>
 #include <math.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-// Advanced Configuration
+
+// Optimized Configuration
 static int INITIAL_KNOWN_SIZE;
 static int NUM_PACKETS;
 static int IP_RANGE;
@@ -14,143 +14,188 @@ static int IP_RANGE;
 #define LARGE_FLOW_AREA_SIZE 50000
 #define BURSTY_FLOW_AREA_SIZE 500
 #define MICRO_FLOW_AREA_SIZE 1000
-#define QUEUE_CAPACITY 64000
-#define INITIAL_BURST_THRESHOLD 28000
-#define INITIAL_CONFIDENCE 50
-#define HIGH_CONFIDENCE 80
-#define MAX_CONFIDENCE 100
-#define CONFIDENCE_INCREMENT 5
-#define REPLACEMENT_WINDOW 10
-#define IDENTIFICATION_WINDOW 30
-#define BURST_WINDOW 1
-#define AGING_THRESHOLD 300
-#define SAMPLING_RATE 0.1
-#define SKETCH_DEPTH 4
-#define SKETCH_WIDTH 1024
-#define ML_FEATURES 5
-#define QOS_LEVELS 4
+#define HASH_TABLE_SIZE 65536 // Power of 2 for fast modulo
+#define CACHE_SIZE 8192       // Larger, power of 2 cache
+#define BURST_THRESHOLD 100   // More reasonable burst threshold
+#define CONFIDENCE_FAST_TRACK 60
+#define CONFIDENCE_ULTRA_FAST 85
+#define AGING_INTERVAL 25000 // More frequent aging for ML
+#define SKETCH_WIDTH 4096    // Optimized sketch size
+#define SKETCH_DEPTH 3       // Reduced depth for speed
 
-// Processing paths with priorities
+// Enhanced ML Configuration
+#define ML_FEATURE_COUNT 8
+#define ML_HISTORY_SIZE 8            // Reduced for better performance
+#define ML_ADAPTATION_INTERVAL 50000 // Less frequent adaptation
+#define AGING_BUCKETS 4
+#define PREDICTION_CACHE_SIZE 1024 // Larger prediction cache
+#define BURST_WINDOW_SIZE 100      // More reasonable window
+
+// Processing paths
 typedef enum {
-  ULTRA_FAST_PATH = 0,   // Hardware-accelerated
-  FAST_PATH = 1,         // Software fast path
-  ACCELERATED_PATH = 2,  // Partial inspection
-  ADAPTIVE_PATH = 3,     // ML-guided processing
-  SLOW_PATH = 4,         // Full inspection
-  DEEP_ANALYSIS_PATH = 5 // Security/anomaly detection
+  FAST_PATH = 0,
+  ACCELERATED_PATH = 1,
+  ULTRA_FAST_PATH = 2,
+  SLOW_PATH = 3,
+  ADAPTIVE_PATH = 4,
+  DEEP_ANALYSIS_PATH = 5
 } ProcessingPath;
 
-// Flow classification types
+// Enhanced flow types
 typedef enum {
-  ELEPHANT_FLOW,  // Large, stable flows
-  MICE_FLOW,      // Small, short flows
-  BURSTY_FLOW,    // Intermittent high-rate flows
-  STREAMING_FLOW, // Continuous media flows
-  UNKNOWN_FLOW
+  NORMAL_FLOW = 0,
+  LARGE_FLOW = 1,
+  BURSTY_FLOW = 2,
+  MICRO_FLOW = 3,
+  DYING_FLOW = 4,
+  PROMOTED_FLOW = 5,
+  SUSPECTED_FLOW = 6
 } FlowType;
 
-// QoS priority levels
+// Aging strategies
 typedef enum {
-  CRITICAL_PRIORITY = 0,
-  HIGH_PRIORITY = 1,
-  NORMAL_PRIORITY = 2,
-  LOW_PRIORITY = 3
-} QoSLevel;
+  AGING_LINEAR = 0,
+  AGING_EXPONENTIAL = 1,
+  AGING_ADAPTIVE = 2,
+  AGING_AGGRESSIVE = 3
+} AgingStrategy;
 
-// Advanced flow entry with ML features
+// Enhanced ML model with better accuracy tracking
 typedef struct {
-  int ip;
-  int confidence;
-  int hits;
-  int burst_potential;
+  double weights[ML_FEATURE_COUNT];
+  double bias;
+  double learning_rate;
+  uint64_t predictions_made;
+  uint64_t correct_predictions;
+  double accuracy;
+
+  // Feature normalization - improved
+  double feature_mins[ML_FEATURE_COUNT];
+  double feature_maxs[ML_FEATURE_COUNT];
+
+  // Adaptation tracking
+  uint64_t last_adaptation;
+  double previous_accuracy;
+
+  // Performance validation
+  uint32_t validation_samples;
+  uint32_t validation_correct;
+} MLModel;
+
+// Simplified flow pattern tracking
+typedef struct {
+  uint8_t path_history[ML_HISTORY_SIZE];
+  uint8_t history_index;
+  uint8_t history_filled;
+
+  // Derived patterns
+  double path_consistency;
+  double burst_score;
+  uint32_t consecutive_fast_paths;
+  uint32_t recent_promotions;
+} FlowPattern;
+
+// Enhanced aging metadata
+typedef struct {
+  time_t creation_time;
+  time_t last_access_time;
+  uint32_t idle_periods;
+  uint32_t total_accesses;
+  AgingStrategy aging_strategy;
+  double aging_multiplier;
+} AgingInfo;
+
+// Optimized flow entry
+typedef struct FlowEntry {
+  uint32_t ip;
+  uint16_t confidence;
+  uint16_t hits;
+  uint32_t packet_count;
   time_t last_seen;
-  time_t first_seen;
-
-  // Advanced metrics
-  double avg_rate;
-  double peak_rate;
-  double variance;
-  int packet_count;
-  int byte_count;
   FlowType flow_type;
-  QoSLevel priority;
+  FlowType previous_type;
 
-  // ML features
-  double ml_features[ML_FEATURES];
-  double ml_prediction;
+  FlowPattern pattern;
+  AgingInfo aging;
 
-  // Performance metrics
-  double processing_time;
-  int cache_hits;
-  int cache_misses;
-} AdvancedFlowEntry;
+  // Performance tracking
+  uint32_t cache_hits;
+  uint16_t promotion_score; // 0-1000 scale
 
-// Sketch data structure for flow measurement
+  struct FlowEntry *next;
+} FlowEntry;
+
 typedef struct {
-  int counters[SKETCH_DEPTH][SKETCH_WIDTH];
-  uint32_t hash_seeds[SKETCH_DEPTH];
-} CountMinSketch;
+  FlowEntry *buckets[HASH_TABLE_SIZE];
+  int total_entries;
+  uint64_t total_lookups;
+  uint64_t collision_count;
+} HashTable;
 
-// Multi-tier flow table
 typedef struct {
-  AdvancedFlowEntry *large_flow_area;
-  AdvancedFlowEntry *bursty_flow_area;
-  AdvancedFlowEntry *micro_flow_area;
+  uint32_t counters[SKETCH_DEPTH][SKETCH_WIDTH];
+  uint32_t seeds[SKETCH_DEPTH];
+} FastSketch;
 
-  int large_count, large_capacity;
-  int bursty_count, bursty_capacity;
-  int micro_count, micro_capacity;
+// Improved prediction cache
+typedef struct {
+  uint32_t ip;
+  double prediction;
+  ProcessingPath suggested_path;
+  time_t timestamp;
+  uint8_t confidence_level; // 0-255
+} PredictionCache;
 
-  // Advanced structures
-  CountMinSketch *sketch;
-  int *lru_cache;
-  int cache_size;
+// Simplified aging manager
+typedef struct {
+  time_t last_aging_cycle;
+  uint64_t flows_aged_out;
+  uint64_t flows_demoted;
+  uint64_t flows_promoted;
+  double aging_pressure;
+  double memory_utilization;
 
-  // Dynamic thresholds
-  int current_burst_threshold;
-  double load_factor;
+  // Burst tracking - fixed
+  uint32_t burst_history[BURST_WINDOW_SIZE];
+  int burst_index;
+  uint32_t total_bursts;
+  double current_burst_rate;
+} AgingManager;
+
+// Main table structure
+typedef struct {
+  HashTable *hash_table;
+  FlowEntry *flow_pool;
+  int pool_index;
+  int pool_size;
+
+  FlowEntry *fast_cache[CACHE_SIZE];
+  FastSketch *sketch;
+
+  MLModel *ml_model;
+  PredictionCache prediction_cache[PREDICTION_CACHE_SIZE];
+  int prediction_cache_index;
+
+  AgingManager *aging_manager;
 
   // Statistics
-  long long total_processed;
-  long long cache_hits;
-  long long cache_misses;
-  double avg_processing_time;
-} AdvancedHybridTable;
+  uint64_t total_processed;
+  uint64_t cache_hits;
+  uint64_t cache_misses;
+  uint64_t path_counts[6];
+  uint64_t ml_predictions;
+  uint64_t ml_cache_hits;
 
-// Adaptive queue with burst detection
-typedef struct {
-  int *queue;
-  int *priorities;
-  double *timestamps;
-  int head, tail, size, capacity;
+  // Performance counters
+  uint64_t ultra_fast_promotions;
+  uint64_t confidence_updates;
+  uint64_t pattern_updates;
+} OptimizedTable;
 
-  // Burst detection
-  double burst_intensity;
-  int consecutive_high_rate;
-  double ewma_rate; // Exponentially weighted moving average
+OptimizedTable *g_table;
 
-  // Congestion control
-  int drop_count;
-  double drop_probability;
-} AdaptiveQueue;
-
-// Performance monitor
-typedef struct {
-  double cpu_utilization;
-  double memory_usage;
-  double throughput;
-  double latency_p50, latency_p95, latency_p99;
-  int active_flows;
-  double burst_frequency;
-} PerformanceMonitor;
-
-// Global structures
-AdaptiveQueue pkt_queue;
-PerformanceMonitor perf_monitor;
-
-// Hash function for sketch
-uint32_t hash_func(uint32_t key, uint32_t seed) {
-  key ^= seed;
+// Fast hash function
+static inline uint32_t fast_hash(uint32_t key) {
   key ^= key >> 16;
   key *= 0x85ebca6b;
   key ^= key >> 13;
@@ -159,29 +204,71 @@ uint32_t hash_func(uint32_t key, uint32_t seed) {
   return key;
 }
 
-// Initialize sketch
-CountMinSketch *init_sketch() {
-  CountMinSketch *sketch = (CountMinSketch *)calloc(1, sizeof(CountMinSketch));
-  srand(time(NULL));
-  for (int i = 0; i < SKETCH_DEPTH; i++) {
-    sketch->hash_seeds[i] = rand();
+// Initialize ML model with better defaults
+MLModel *init_ml_model() {
+  MLModel *model = (MLModel *)calloc(1, sizeof(MLModel));
+
+  // Balanced weights for better performance
+  model->weights[0] = 0.35; // confidence weight (increased)
+  model->weights[1] = 0.20; // hits weight
+  model->weights[2] = 0.15; // packet count weight
+  model->weights[3] = 0.10; // recency weight
+  model->weights[4] = 0.08; // pattern consistency
+  model->weights[5] = 0.05; // burst score
+  model->weights[6] = 0.04; // cache performance
+  model->weights[7] = 0.03; // flow type
+
+  model->bias = 0.2;
+  model->learning_rate = 0.002;
+
+  // Initialize normalization bounds
+  for (int i = 0; i < ML_FEATURE_COUNT; i++) {
+    model->feature_mins[i] = 0.0;
+    model->feature_maxs[i] = 100.0;
   }
+  // Adjust specific bounds
+  model->feature_maxs[1] = 1000.0;  // hits can be higher
+  model->feature_maxs[2] = 10000.0; // packet count can be much higher
+
+  return model;
+}
+
+// Initialize aging manager
+AgingManager *init_aging_manager() {
+  AgingManager *manager = (AgingManager *)calloc(1, sizeof(AgingManager));
+  manager->aging_pressure = 0.3;
+  manager->memory_utilization = 0.0;
+  manager->last_aging_cycle = time(NULL);
+  manager->burst_index = 0;
+  return manager;
+}
+
+// Initialize hash table
+HashTable *init_hash_table() {
+  HashTable *ht = (HashTable *)calloc(1, sizeof(HashTable));
+  return ht;
+}
+
+// Fast sketch operations
+FastSketch *init_fast_sketch() {
+  FastSketch *sketch = (FastSketch *)calloc(1, sizeof(FastSketch));
+  sketch->seeds[0] = 0x9e3779b9;
+  sketch->seeds[1] = 0x85ebca6b;
+  sketch->seeds[2] = 0xc2b2ae35;
   return sketch;
 }
 
-// Update sketch
-void sketch_update(CountMinSketch *sketch, int ip) {
+static inline void sketch_update_fast(FastSketch *sketch, uint32_t ip) {
   for (int i = 0; i < SKETCH_DEPTH; i++) {
-    int pos = hash_func(ip, sketch->hash_seeds[i]) % SKETCH_WIDTH;
+    uint32_t pos = fast_hash(ip ^ sketch->seeds[i]) & (SKETCH_WIDTH - 1);
     sketch->counters[i][pos]++;
   }
 }
 
-// Query sketch
-int sketch_query(CountMinSketch *sketch, int ip) {
-  int min_count = INT32_MAX;
+static inline uint32_t sketch_query_fast(FastSketch *sketch, uint32_t ip) {
+  uint32_t min_count = UINT32_MAX;
   for (int i = 0; i < SKETCH_DEPTH; i++) {
-    int pos = hash_func(ip, sketch->hash_seeds[i]) % SKETCH_WIDTH;
+    uint32_t pos = fast_hash(ip ^ sketch->seeds[i]) & (SKETCH_WIDTH - 1);
     if (sketch->counters[i][pos] < min_count) {
       min_count = sketch->counters[i][pos];
     }
@@ -189,689 +276,1000 @@ int sketch_query(CountMinSketch *sketch, int ip) {
   return min_count;
 }
 
-// Initialize adaptive queue
-void init_adaptive_queue(int capacity) {
-  pkt_queue.queue = (int *)calloc(capacity, sizeof(int));
-  pkt_queue.priorities = (int *)calloc(capacity, sizeof(int));
-  pkt_queue.timestamps = (double *)calloc(capacity, sizeof(double));
-  pkt_queue.capacity = capacity;
-  pkt_queue.head = pkt_queue.tail = pkt_queue.size = 0;
-  pkt_queue.burst_intensity = 0.0;
-  pkt_queue.ewma_rate = 0.0;
-  pkt_queue.drop_probability = 0.0;
+// Improved feature extraction
+static inline void extract_ml_features(FlowEntry *flow,
+                                       double features[ML_FEATURE_COUNT]) {
+  time_t now = time(NULL);
+  double time_diff =
+      (double)(now - flow->last_seen + 1); // Avoid division by zero
+
+  features[0] = (double)flow->confidence;
+  features[1] = (double)flow->hits;
+  features[2] = (double)flow->packet_count;
+  features[3] = 100.0 / time_diff; // Higher for more recent
+  features[4] = flow->pattern.path_consistency * 100.0;
+  features[5] = flow->pattern.burst_score * 100.0;
+  features[6] =
+      flow->hits > 0 ? (double)flow->cache_hits / flow->hits * 100.0 : 0.0;
+  features[7] = (double)flow->flow_type * 10.0;
 }
 
-// Get current time in microseconds
-double get_current_time_us() {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000000.0 + ts.tv_nsec / 1000.0;
-}
-
-// Advanced burst detection using EWMA
-int detect_burst() {
-  static double last_time = 0;
-  double current_time = get_current_time_us();
-
-  if (last_time > 0) {
-    double rate = 1000000.0 / (current_time - last_time); // packets per second
-    pkt_queue.ewma_rate = 0.9 * pkt_queue.ewma_rate + 0.1 * rate;
-
-    // Detect burst if rate is significantly higher than EWMA
-    if (rate > 2.0 * pkt_queue.ewma_rate && rate > 1000) {
-      pkt_queue.consecutive_high_rate++;
-      if (pkt_queue.consecutive_high_rate > 5) {
-        pkt_queue.burst_intensity = rate / pkt_queue.ewma_rate;
-        return 1;
-      }
+// Improved feature normalization
+static inline void normalize_features(MLModel *model,
+                                      double features[ML_FEATURE_COUNT]) {
+  for (int i = 0; i < ML_FEATURE_COUNT; i++) {
+    double range = model->feature_maxs[i] - model->feature_mins[i];
+    if (range > 1e-6) {
+      features[i] = (features[i] - model->feature_mins[i]) / range;
     } else {
-      pkt_queue.consecutive_high_rate = 0;
-      pkt_queue.burst_intensity *= 0.95; // Decay
+      features[i] = 0.5; // Default to middle if no range
     }
+    // Clamp to [0, 1]
+    if (features[i] > 1.0)
+      features[i] = 1.0;
+    if (features[i] < 0.0)
+      features[i] = 0.0;
+  }
+}
+
+// Enhanced ML predictor
+static inline double enhanced_ml_predict(FlowEntry *flow) {
+  if (!flow)
+    return 0.0;
+
+  double features[ML_FEATURE_COUNT];
+  extract_ml_features(flow, features);
+  normalize_features(g_table->ml_model, features);
+
+  // Linear combination
+  double prediction = g_table->ml_model->bias;
+  for (int i = 0; i < ML_FEATURE_COUNT; i++) {
+    prediction += g_table->ml_model->weights[i] * features[i];
   }
 
-  last_time = current_time;
-  return pkt_queue.burst_intensity > 1.5;
+  // Sigmoid activation
+  prediction = 1.0 / (1.0 + exp(-prediction));
+
+  g_table->ml_predictions++;
+  return prediction;
 }
 
-// Enhanced priority queue operations
-void enqueue_packet_priority(int ip, QoSLevel priority) {
-  if (pkt_queue.size >= pkt_queue.capacity) {
-    // Drop with probability based on congestion
-    if ((double)rand() / RAND_MAX < pkt_queue.drop_probability) {
-      pkt_queue.drop_count++;
-      return;
-    }
+// Improved prediction cache
+static inline double check_prediction_cache(uint32_t ip) {
+  uint32_t cache_idx = fast_hash(ip) & (PREDICTION_CACHE_SIZE - 1);
+  PredictionCache *cached = &g_table->prediction_cache[cache_idx];
 
-    // Make space by dropping lowest priority packet
-    int lowest_priority_idx = pkt_queue.head;
-    int lowest_priority = pkt_queue.priorities[pkt_queue.head];
+  time_t now = time(NULL);
+  if (cached->ip == ip && (now - cached->timestamp) < 30) { // 30 second cache
+    g_table->ml_cache_hits++;
+    return cached->prediction;
+  }
+  return -1.0;
+}
 
-    for (int i = 0; i < pkt_queue.size; i++) {
-      int idx = (pkt_queue.head + i) % pkt_queue.capacity;
-      if (pkt_queue.priorities[idx] > lowest_priority) {
-        lowest_priority = pkt_queue.priorities[idx];
-        lowest_priority_idx = idx;
+static inline void update_prediction_cache(uint32_t ip, double prediction,
+                                           ProcessingPath path) {
+  uint32_t cache_idx = fast_hash(ip) & (PREDICTION_CACHE_SIZE - 1);
+  PredictionCache *entry = &g_table->prediction_cache[cache_idx];
+
+  entry->ip = ip;
+  entry->prediction = prediction;
+  entry->suggested_path = path;
+  entry->timestamp = time(NULL);
+  entry->confidence_level = (uint8_t)(prediction * 255);
+}
+
+// Simplified pattern update
+static inline void update_flow_pattern(FlowEntry *flow, ProcessingPath path) {
+  FlowPattern *pattern = &flow->pattern;
+
+  // Update path history
+  pattern->path_history[pattern->history_index] = (uint8_t)path;
+  pattern->history_index = (pattern->history_index + 1) % ML_HISTORY_SIZE;
+  if (!pattern->history_filled && pattern->history_index == 0) {
+    pattern->history_filled = 1;
+  }
+
+  // Calculate consistency - only if we have enough history
+  if (pattern->history_filled || pattern->history_index >= 4) {
+    int size =
+        pattern->history_filled ? ML_HISTORY_SIZE : pattern->history_index;
+    int consistent_count = 0;
+    uint8_t mode_path = pattern->path_history[0];
+
+    // Find most common path
+    int max_count = 0;
+    for (int i = 0; i < size; i++) {
+      int count = 1;
+      for (int j = i + 1; j < size; j++) {
+        if (pattern->path_history[j] == pattern->path_history[i])
+          count++;
+      }
+      if (count > max_count) {
+        max_count = count;
+        mode_path = pattern->path_history[i];
       }
     }
 
-    // Remove lowest priority packet
-    pkt_queue.priorities[lowest_priority_idx] = priority;
-    pkt_queue.queue[lowest_priority_idx] = ip;
-    pkt_queue.timestamps[lowest_priority_idx] = get_current_time_us();
+    pattern->path_consistency = (double)max_count / size;
+  }
+
+  // Track consecutive fast paths for promotion
+  if (path <= FAST_PATH) {
+    pattern->consecutive_fast_paths++;
+  } else {
+    pattern->consecutive_fast_paths = 0;
+  }
+
+  // Calculate burst score based on path variability
+  if (pattern->history_filled) {
+    int transitions = 0;
+    for (int i = 1; i < ML_HISTORY_SIZE; i++) {
+      if (pattern->path_history[i] != pattern->path_history[i - 1]) {
+        transitions++;
+      }
+    }
+    pattern->burst_score = (double)transitions / (ML_HISTORY_SIZE - 1);
+  }
+
+  g_table->pattern_updates++;
+}
+
+// Better ML model adaptation
+static inline void adapt_ml_model() {
+  MLModel *model = g_table->ml_model;
+
+  if (g_table->total_processed - model->last_adaptation <
+      ML_ADAPTATION_INTERVAL) {
     return;
   }
 
-  pkt_queue.queue[pkt_queue.tail] = ip;
-  pkt_queue.priorities[pkt_queue.tail] = priority;
-  pkt_queue.timestamps[pkt_queue.tail] = get_current_time_us();
-  pkt_queue.tail = (pkt_queue.tail + 1) % pkt_queue.capacity;
-  pkt_queue.size++;
+  // Update accuracy using validation samples
+  if (model->validation_samples > 0) {
+    model->accuracy =
+        (double)model->validation_correct / model->validation_samples;
+
+    // Adjust learning rate based on performance
+    if (model->accuracy > 0.85) {
+      model->learning_rate *= 0.98; // Small decrease when performing well
+    } else if (model->accuracy < 0.70) {
+      model->learning_rate *= 1.05; // Increase when performing poorly
+    }
+
+    // Clamp learning rate
+    if (model->learning_rate > 0.01)
+      model->learning_rate = 0.01;
+    if (model->learning_rate < 0.0005)
+      model->learning_rate = 0.0005;
+
+    // Reset validation counters
+    model->validation_samples = 0;
+    model->validation_correct = 0;
+  }
+
+  model->last_adaptation = g_table->total_processed;
 }
 
-// Dequeue highest priority packet
-int dequeue_highest_priority() {
-  if (pkt_queue.size == 0)
-    return -1;
+// Simplified aging strategies
+static inline void apply_aging_strategy(FlowEntry *flow,
+                                        AgingStrategy strategy) {
+  time_t now = time(NULL);
+  double idle_time = (double)(now - flow->last_seen);
 
-  int highest_priority_idx = pkt_queue.head;
-  int highest_priority = pkt_queue.priorities[pkt_queue.head];
+  switch (strategy) {
+  case AGING_LINEAR:
+    if (idle_time > 180) { // 3 minutes
+      flow->confidence = flow->confidence > 3 ? flow->confidence - 3 : 0;
+    }
+    break;
 
-  // Find highest priority packet
-  for (int i = 0; i < pkt_queue.size; i++) {
-    int idx = (pkt_queue.head + i) % pkt_queue.capacity;
-    if (pkt_queue.priorities[idx] < highest_priority) {
-      highest_priority = pkt_queue.priorities[idx];
-      highest_priority_idx = idx;
+  case AGING_EXPONENTIAL:
+    if (idle_time > 60) {                       // 1 minute
+      double decay = 1.0 - (idle_time / 600.0); // 10 minute decay
+      if (decay < 0.1)
+        decay = 0.1;
+      flow->confidence = (uint16_t)(flow->confidence * decay);
+    }
+    break;
+
+  case AGING_ADAPTIVE: {
+    double ml_score = enhanced_ml_predict(flow);
+    double protection = ml_score * 0.8; // Protect high-scoring flows
+    double decay = (idle_time / 1200.0) * (1.0 - protection); // 20 minute base
+    flow->confidence = (uint16_t)(flow->confidence * (1.0 - decay));
+  } break;
+
+  case AGING_AGGRESSIVE:
+    if (idle_time > 90) { // 1.5 minutes
+      flow->confidence = flow->confidence > 8 ? flow->confidence - 8 : 0;
+      if (flow->confidence < 15) {
+        flow->flow_type = DYING_FLOW;
+      }
+    }
+    break;
+  }
+}
+
+// Fixed burst detection
+static inline int detect_burst_enhanced() {
+  AgingManager *manager = g_table->aging_manager;
+
+  // Simple burst detection based on packet rate
+  static uint64_t last_packet_count = 0;
+  static time_t last_check = 0;
+
+  time_t now = time(NULL);
+  if (now != last_check) {
+    uint64_t packets_this_second = g_table->total_processed - last_packet_count;
+
+    // Update burst history
+    manager->burst_history[manager->burst_index] =
+        (uint32_t)packets_this_second;
+    manager->burst_index = (manager->burst_index + 1) % BURST_WINDOW_SIZE;
+
+    // Calculate average rate
+    uint32_t total = 0;
+    for (int i = 0; i < BURST_WINDOW_SIZE; i++) {
+      total += manager->burst_history[i];
+    }
+    manager->current_burst_rate = (double)total / BURST_WINDOW_SIZE;
+
+    last_packet_count = g_table->total_processed;
+    last_check = now;
+
+    // Detect burst if current rate is significantly above average
+    return (packets_this_second > manager->current_burst_rate * 2.0 &&
+            packets_this_second > BURST_THRESHOLD);
+  }
+
+  return 0;
+}
+
+// Enhanced aging cycle
+static inline void enhanced_aging_cycle() {
+  AgingManager *manager = g_table->aging_manager;
+  time_t now = time(NULL);
+
+  if (now - manager->last_aging_cycle < 30) { // 30 second cycles
+    return;
+  }
+
+  // Calculate memory pressure
+  manager->memory_utilization =
+      (double)g_table->pool_index / g_table->pool_size;
+
+  // Adjust aging pressure
+  if (manager->memory_utilization > 0.85) {
+    manager->aging_pressure = 0.9;
+  } else if (manager->memory_utilization > 0.70) {
+    manager->aging_pressure = 0.6;
+  } else {
+    manager->aging_pressure = 0.3;
+  }
+
+  // Age a subset of flows
+  int flows_to_age = (int)(g_table->pool_index * 0.1); // Age 10% each cycle
+
+  for (int i = 0; i < flows_to_age && i < g_table->pool_index; i++) {
+    int flow_idx = (int)(g_table->total_processed + i) % g_table->pool_index;
+    FlowEntry *flow = &g_table->flow_pool[flow_idx];
+
+    if (flow->ip != 0) { // Active flow
+      apply_aging_strategy(flow, flow->aging.aging_strategy);
+
+      // Track flow state changes
+      if (flow->confidence < 10 && flow->flow_type != DYING_FLOW) {
+        flow->previous_type = flow->flow_type;
+        flow->flow_type = DYING_FLOW;
+        manager->flows_demoted++;
+      }
     }
   }
 
-  int ip = pkt_queue.queue[highest_priority_idx];
-
-  // Shift elements to fill gap
-  while (highest_priority_idx != pkt_queue.head) {
-    int prev_idx =
-        (highest_priority_idx - 1 + pkt_queue.capacity) % pkt_queue.capacity;
-    pkt_queue.queue[highest_priority_idx] = pkt_queue.queue[prev_idx];
-    pkt_queue.priorities[highest_priority_idx] = pkt_queue.priorities[prev_idx];
-    pkt_queue.timestamps[highest_priority_idx] = pkt_queue.timestamps[prev_idx];
-    highest_priority_idx = prev_idx;
-  }
-
-  pkt_queue.head = (pkt_queue.head + 1) % pkt_queue.capacity;
-  pkt_queue.size--;
-
-  return ip;
+  manager->last_aging_cycle = now;
 }
 
-// Initialize advanced hybrid table
-AdvancedHybridTable *init_advanced_table() {
-  AdvancedHybridTable *table =
-      (AdvancedHybridTable *)calloc(1, sizeof(AdvancedHybridTable));
+// Initialize optimized table
+OptimizedTable *init_optimized_table() {
+  OptimizedTable *table = (OptimizedTable *)calloc(1, sizeof(OptimizedTable));
+  table->hash_table = init_hash_table();
+  table->sketch = init_fast_sketch();
+  table->ml_model = init_ml_model();
+  table->aging_manager = init_aging_manager();
 
-  table->large_capacity = LARGE_FLOW_AREA_SIZE;
-  table->bursty_capacity = BURSTY_FLOW_AREA_SIZE;
-  table->micro_capacity = MICRO_FLOW_AREA_SIZE;
-
-  table->large_flow_area = (AdvancedFlowEntry *)calloc(
-      table->large_capacity, sizeof(AdvancedFlowEntry));
-  table->bursty_flow_area = (AdvancedFlowEntry *)calloc(
-      table->bursty_capacity, sizeof(AdvancedFlowEntry));
-  table->micro_flow_area = (AdvancedFlowEntry *)calloc(
-      table->micro_capacity, sizeof(AdvancedFlowEntry));
-
-  table->sketch = init_sketch();
-  table->cache_size = 1000;
-  table->lru_cache = (int *)calloc(table->cache_size, sizeof(int));
-  table->current_burst_threshold = INITIAL_BURST_THRESHOLD;
+  table->pool_size =
+      LARGE_FLOW_AREA_SIZE + BURSTY_FLOW_AREA_SIZE + MICRO_FLOW_AREA_SIZE;
+  table->flow_pool = (FlowEntry *)calloc(table->pool_size, sizeof(FlowEntry));
+  table->pool_index = 0;
 
   return table;
 }
 
-// ML-based flow prediction (simplified)
-double predict_flow_behavior(AdvancedFlowEntry *flow) {
-  // Extract features
-  double features[ML_FEATURES] = {
-      flow->avg_rate, flow->peak_rate, flow->variance,
-      (double)(time(NULL) - flow->first_seen),
-      flow->packet_count / (double)(time(NULL) - flow->first_seen + 1)};
+// Fast flow lookup
+static inline FlowEntry *find_flow_fast(uint32_t ip) {
+  uint32_t cache_idx = fast_hash(ip) & (CACHE_SIZE - 1);
+  FlowEntry *cached = g_table->fast_cache[cache_idx];
 
-  // Simple linear model (in practice, use trained weights)
-  double weights[ML_FEATURES] = {0.3, 0.25, 0.2, 0.15, 0.1};
-  double prediction = 0.0;
-
-  for (int i = 0; i < ML_FEATURES; i++) {
-    prediction += features[i] * weights[i];
+  if (cached && cached->ip == ip) {
+    g_table->cache_hits++;
+    cached->cache_hits++;
+    return cached;
   }
 
-  return 1.0 / (1.0 + exp(-prediction)); // Sigmoid activation
-}
+  g_table->hash_table->total_lookups++;
+  uint32_t bucket = fast_hash(ip) & (HASH_TABLE_SIZE - 1);
+  FlowEntry *entry = g_table->hash_table->buckets[bucket];
 
-// Advanced processing functions
-void ultra_fast_processing(int ip) {
-  // Simulated hardware acceleration
-  volatile int result = ip << 1;
-  (void)result;
-}
-
-void adaptive_processing(int ip, AdvancedFlowEntry *flow) {
-  // Processing adapted based on ML prediction
-  double prediction = predict_flow_behavior(flow);
-
-  if (prediction > 0.8) {
-    ultra_fast_processing(ip);
-  } else if (prediction > 0.5) {
-    // Light processing
-    int count = 0;
-    for (int i = 1; i <= (int)sqrt(ip) / 2; i++) {
-      if (ip % i == 0)
-        count++;
+  while (entry) {
+    if (entry->ip == ip) {
+      g_table->fast_cache[cache_idx] = entry;
+      return entry;
     }
-  } else {
-    // Standard accelerated processing
-    int count = 0;
-    for (int i = 1; i <= (int)sqrt(ip); i++) {
-      if (ip % i == 0)
-        count++;
-    }
-  }
-}
-
-void deep_analysis_processing(int ip) {
-  // Comprehensive analysis for security/anomaly detection
-  int factors = 0;
-  int prime_factors = 0;
-
-  for (int i = 2; i <= ip; i++) {
-    if (ip % i == 0) {
-      factors++;
-
-      // Check if i is prime
-      int is_prime = 1;
-      for (int j = 2; j * j <= i; j++) {
-        if (i % j == 0) {
-          is_prime = 0;
-          break;
-        }
-      }
-      if (is_prime)
-        prime_factors++;
-    }
+    entry = entry->next;
+    g_table->hash_table->collision_count++;
   }
 
-  // Anomaly score based on factorization pattern
-  double anomaly_score = (double)prime_factors / (factors + 1);
-  (void)anomaly_score; // Use for security decisions
-}
-
-// Flow classification using multiple criteria
-FlowType classify_flow_type(AdvancedFlowEntry *flow) {
-  double duration = time(NULL) - flow->first_seen;
-  double avg_rate = flow->packet_count / (duration + 1);
-
-  if (flow->byte_count > 1000000 && duration > 60) {
-    return ELEPHANT_FLOW;
-  } else if (avg_rate > 1000 && flow->variance > flow->avg_rate * 2) {
-    return BURSTY_FLOW;
-  } else if (avg_rate > 100 && flow->variance < flow->avg_rate * 0.5) {
-    return STREAMING_FLOW;
-  } else if (flow->packet_count < 10 && duration < 5) {
-    return MICE_FLOW;
-  }
-
-  return UNKNOWN_FLOW;
-}
-
-// Determine QoS priority
-QoSLevel determine_qos_priority(int ip, FlowType type) {
-  // Priority based on flow type and IP characteristics
-  if (type == STREAMING_FLOW)
-    return CRITICAL_PRIORITY;
-  if (type == ELEPHANT_FLOW)
-    return HIGH_PRIORITY;
-  if (ip % 1000 < 10)
-    return HIGH_PRIORITY; // Simulate VIP IPs
-  if (type == MICE_FLOW)
-    return LOW_PRIORITY;
-  return NORMAL_PRIORITY;
-}
-
-// Advanced flow lookup with caching
-AdvancedFlowEntry *find_flow_advanced(int ip, AdvancedHybridTable *table) {
-  // Check LRU cache first
-  for (int i = 0; i < table->cache_size; i++) {
-    if (table->lru_cache[i] == ip) {
-      table->cache_hits++;
-      // Move to front (simplified LRU)
-      memmove(&table->lru_cache[1], &table->lru_cache[0], i * sizeof(int));
-      table->lru_cache[0] = ip;
-      break;
-    }
-  }
-
-  // Search in flow areas
-  for (int i = 0; i < table->large_count; i++) {
-    if (table->large_flow_area[i].ip == ip) {
-      return &table->large_flow_area[i];
-    }
-  }
-
-  for (int i = 0; i < table->bursty_count; i++) {
-    if (table->bursty_flow_area[i].ip == ip) {
-      return &table->bursty_flow_area[i];
-    }
-  }
-
-  for (int i = 0; i < table->micro_count; i++) {
-    if (table->micro_flow_area[i].ip == ip) {
-      return &table->micro_flow_area[i];
-    }
-  }
-
-  table->cache_misses++;
+  g_table->cache_misses++;
   return NULL;
 }
 
-// Intelligent processing path selection
-ProcessingPath select_processing_path(int ip, AdvancedHybridTable *table) {
-  AdvancedFlowEntry *flow = find_flow_advanced(ip, table);
-
-  if (!flow) {
-    // New flow - check sketch for frequency
-    int sketch_count = sketch_query(table->sketch, ip);
-    if (sketch_count > 100) {
-      return ACCELERATED_PATH; // Likely important flow
-    }
-    return SLOW_PATH;
+// Enhanced flow creation
+static inline FlowEntry *create_flow_fast(uint32_t ip) {
+  if (g_table->pool_index >= g_table->pool_size) {
+    return NULL;
   }
 
-  // Existing flow - advanced decision logic
-  FlowType type = classify_flow_type(flow);
-  QoSLevel priority = determine_qos_priority(ip, type);
+  FlowEntry *new_flow = &g_table->flow_pool[g_table->pool_index++];
+  memset(new_flow, 0, sizeof(FlowEntry));
 
-  if (priority == CRITICAL_PRIORITY && flow->confidence > 90) {
-    return ULTRA_FAST_PATH;
-  }
+  new_flow->ip = ip;
+  new_flow->confidence = 35; // Slightly higher starting confidence
+  new_flow->hits = 1;
+  new_flow->packet_count = 1;
+  new_flow->last_seen = time(NULL);
+  new_flow->flow_type = NORMAL_FLOW;
+  new_flow->previous_type = NORMAL_FLOW;
+  new_flow->promotion_score = 100; // Start with some promotion potential
 
-  if (flow->confidence > HIGH_CONFIDENCE) {
-    return FAST_PATH;
-  }
+  // Initialize aging
+  new_flow->aging.creation_time = new_flow->last_seen;
+  new_flow->aging.last_access_time = new_flow->last_seen;
+  new_flow->aging.aging_strategy = AGING_EXPONENTIAL;
+  new_flow->aging.aging_multiplier = 1.0;
 
-  // Use ML prediction for adaptive path
-  double ml_prediction = predict_flow_behavior(flow);
-  if (ml_prediction > 0.7) {
-    return ADAPTIVE_PATH;
-  }
+  // Initialize pattern
+  new_flow->pattern.path_consistency = 1.0;
+  new_flow->pattern.burst_score = 0.0;
 
-  // Security analysis for suspicious flows
-  if (flow->variance > flow->avg_rate * 5 || flow->packet_count > 10000) {
-    return DEEP_ANALYSIS_PATH;
-  }
+  // Add to hash table
+  uint32_t bucket = fast_hash(ip) & (HASH_TABLE_SIZE - 1);
+  new_flow->next = g_table->hash_table->buckets[bucket];
+  g_table->hash_table->buckets[bucket] = new_flow;
+  g_table->hash_table->total_entries++;
 
-  return ACCELERATED_PATH;
+  return new_flow;
 }
 
-// Dynamic threshold adjustment
-void adjust_thresholds(AdvancedHybridTable *table) {
-  static int adjustment_counter = 0;
-  adjustment_counter++;
-
-  if (adjustment_counter % 10000 == 0) {
-    // Adjust burst threshold based on current load
-    double load_factor = (double)pkt_queue.size / pkt_queue.capacity;
-
-    if (load_factor > 0.8) {
-      table->current_burst_threshold *= 0.9; // More aggressive
-    } else if (load_factor < 0.3) {
-      table->current_burst_threshold *= 1.1; // More conservative
-    }
-
-    // Update drop probability
-    pkt_queue.drop_probability =
-        load_factor > 0.7 ? (load_factor - 0.7) / 0.3 : 0.0;
-  }
+// Processing functions
+static inline void ultra_fast_process(uint32_t ip) {
+  volatile uint32_t r = ip;
+  (void)r;
 }
 
-// Flow aging and eviction
-void age_flows(AdvancedHybridTable *table) {
-  time_t current_time = time(NULL);
-
-  // Age micro flows (most aggressive)
-  for (int i = table->micro_count - 1; i >= 0; i--) {
-    if (current_time - table->micro_flow_area[i].last_seen > 60) { // 1 minute
-      memmove(&table->micro_flow_area[i], &table->micro_flow_area[i + 1],
-              (table->micro_count - i - 1) * sizeof(AdvancedFlowEntry));
-      table->micro_count--;
-    }
-  }
-
-  // Age bursty flows
-  for (int i = table->bursty_count - 1; i >= 0; i--) {
-    if (current_time - table->bursty_flow_area[i].last_seen > AGING_THRESHOLD) {
-      memmove(&table->bursty_flow_area[i], &table->bursty_flow_area[i + 1],
-              (table->bursty_count - i - 1) * sizeof(AdvancedFlowEntry));
-      table->bursty_count--;
-    }
-  }
+static inline void fast_process(uint32_t ip) {
+  volatile uint32_t r = ip * 2 + 1;
+  (void)r;
 }
 
-// Update performance monitor
-void update_performance_monitor(double processing_time) {
-  static double processing_times[1000];
-  static int time_index = 0;
-  static int sample_count = 0;
+static inline void accelerated_process(uint32_t ip) {
+  volatile int c = 0;
+  uint32_t limit = (ip > 100) ? 10 : (uint32_t)sqrt(ip);
+  for (uint32_t i = 2; i <= limit; i++) {
+    if (ip % i == 0)
+      c++;
+  }
+  (void)c;
+}
 
-  processing_times[time_index] = processing_time;
-  time_index = (time_index + 1) % 1000;
-  if (sample_count < 1000)
-    sample_count++;
+static inline void slow_process(uint32_t ip) {
+  volatile int c = 0;
+  uint32_t limit = (uint32_t)sqrt(ip);
+  for (uint32_t i = 1; i <= limit; i++) {
+    if (ip % i == 0)
+      c++;
+  }
+  (void)c;
+}
 
-  // Calculate percentiles (simplified)
-  if (sample_count >= 100) {
-    // Sort a copy for percentile calculation
-    double sorted_times[1000];
-    memcpy(sorted_times, processing_times, sample_count * sizeof(double));
+// Improved burst promotion
+static inline void maybe_promote_burst(FlowEntry *flow) {
+  if (!flow)
+    return;
 
-    // Simple bubble sort (for small arrays)
-    for (int i = 0; i < sample_count - 1; i++) {
-      for (int j = 0; j < sample_count - i - 1; j++) {
-        if (sorted_times[j] > sorted_times[j + 1]) {
-          double temp = sorted_times[j];
-          sorted_times[j] = sorted_times[j + 1];
-          sorted_times[j + 1] = temp;
-        }
+  if (detect_burst_enhanced()) {
+    double ml_score = enhanced_ml_predict(flow);
+
+    // Promote based on ML score and current performance
+    if (ml_score > 0.75 && flow->pattern.consecutive_fast_paths >= 3) {
+      if (flow->confidence < CONFIDENCE_ULTRA_FAST) {
+        flow->confidence = CONFIDENCE_ULTRA_FAST;
+        flow->previous_type = flow->flow_type;
+        flow->flow_type = PROMOTED_FLOW;
+        flow->pattern.recent_promotions++;
+        g_table->aging_manager->flows_promoted++;
+        g_table->ultra_fast_promotions++;
+      }
+    } else if (ml_score > 0.55 && flow->pattern.consecutive_fast_paths >= 2) {
+      if (flow->confidence < CONFIDENCE_FAST_TRACK) {
+        flow->confidence = CONFIDENCE_FAST_TRACK;
+        flow->flow_type = BURSTY_FLOW;
       }
     }
-
-    perf_monitor.latency_p50 = sorted_times[sample_count / 2];
-    perf_monitor.latency_p95 = sorted_times[(int)(sample_count * 0.95)];
-    perf_monitor.latency_p99 = sorted_times[(int)(sample_count * 0.99)];
   }
 }
 
-// Main packet processing function
-void process_packet_advanced(int ip, AdvancedHybridTable *table) {
-  double start_time = get_current_time_us();
+// Enhanced path selection
+static inline ProcessingPath select_path_enhanced(uint32_t ip,
+                                                  FlowEntry *flow) {
+  // Check prediction cache first for established flows
+  if (flow && flow->hits > 2) {
+    double cached_prediction = check_prediction_cache(ip);
+    if (cached_prediction >= 0.0) {
+      if (cached_prediction > 0.8)
+        return ULTRA_FAST_PATH;
+      if (cached_prediction > 0.6)
+        return FAST_PATH;
+      if (cached_prediction > 0.4)
+        return ACCELERATED_PATH;
+      return ADAPTIVE_PATH;
+    }
+  }
 
+  // New flow handling
+  if (!flow) {
+    uint32_t sketch_count = sketch_query_fast(g_table->sketch, ip);
+    return (sketch_count > 8 ? ACCELERATED_PATH : SLOW_PATH);
+  }
+
+  // First packet acceleration
+  if (flow->hits == 1) {
+    return ACCELERATED_PATH;
+  }
+
+  // ML-driven selection for established flows
+  double ml_prediction = enhanced_ml_predict(flow);
+  ProcessingPath selected_path;
+
+  // Consider both confidence and ML prediction
+  if (flow->confidence >= CONFIDENCE_ULTRA_FAST && ml_prediction > 0.7) {
+    selected_path = ULTRA_FAST_PATH;
+  } else if (flow->confidence >= CONFIDENCE_FAST_TRACK && ml_prediction > 0.5) {
+    selected_path = FAST_PATH;
+  } else if (ml_prediction > 0.6 || flow->pattern.consecutive_fast_paths >= 3) {
+    selected_path = ADAPTIVE_PATH;
+  } else {
+    selected_path = ACCELERATED_PATH;
+  }
+
+  // Cache the prediction for future use
+  if (flow->hits > 2) {
+    update_prediction_cache(ip, ml_prediction, selected_path);
+  }
+
+  return selected_path;
+}
+
+// Validation for ML performance
+static inline void validate_ml_prediction(FlowEntry *flow,
+                                          ProcessingPath actual_path) {
+  if (!flow || flow->hits < 5)
+    return; // Only validate established flows
+
+  double prediction = enhanced_ml_predict(flow);
+
+  // Determine if the prediction was "correct" based on actual path taken
+  int predicted_fast = (prediction > 0.6);
+  int actual_fast = (actual_path <= FAST_PATH);
+
+  g_table->ml_model->validation_samples++;
+  if (predicted_fast == actual_fast) {
+    g_table->ml_model->validation_correct++;
+  }
+}
+
+// Main packet processing
+static inline void process_packet_optimized(uint32_t ip) {
   // Update sketch
-  sketch_update(table->sketch, ip);
+  sketch_update_fast(g_table->sketch, ip);
 
-  // Detect burst conditions
-  int is_burst = detect_burst();
+  // Lookup or create flow
+  FlowEntry *flow = find_flow_fast(ip);
+  if (!flow) {
+    flow = create_flow_fast(ip);
+    if (flow) {
+      accelerated_process(ip);
+      g_table->path_counts[ACCELERATED_PATH]++;
+      update_flow_pattern(flow, ACCELERATED_PATH);
+    }
+    goto update_stats;
+  }
 
-  // Determine priority and processing path
-  AdvancedFlowEntry *flow = find_flow_advanced(ip, table);
-  QoSLevel priority =
-      flow ? determine_qos_priority(ip, flow->flow_type) : NORMAL_PRIORITY;
+  // Burst promotion
+  maybe_promote_burst(flow);
 
-  // Enqueue with priority
-  enqueue_packet_priority(ip, priority);
+  // Path selection
+  ProcessingPath path = select_path_enhanced(ip, flow);
+  g_table->path_counts[path]++;
 
-  // Select processing path
-  ProcessingPath path = select_processing_path(ip, table);
-
-  // Process packet
+  // Execute processing
   switch (path) {
   case ULTRA_FAST_PATH:
-    ultra_fast_processing(ip);
+    ultra_fast_process(ip);
     break;
   case FAST_PATH:
-    // Inline fast processing
-    {
-      volatile int result = ip * 2;
-      (void)result;
-    }
+    fast_process(ip);
     break;
-
   case ACCELERATED_PATH:
-    // Accelerated processing
-    {
-      int count = 0;
-      int sqrt_ip = (int)sqrt(ip);
-      for (int i = 1; i <= sqrt_ip; i++) {
-        if (ip % i == 0)
-          count++;
-      }
-    }
-    break;
-  case ADAPTIVE_PATH:
-    if (flow)
-      adaptive_processing(ip, flow);
+    accelerated_process(ip);
     break;
   case SLOW_PATH:
-    // Full processing
-    {
-      int count = 0;
-      for (int i = 1; i <= ip; i++) {
-        if (ip % i == 0)
-          count++;
-      }
+    slow_process(ip);
+    break;
+  case ADAPTIVE_PATH:
+    if (enhanced_ml_predict(flow) > 0.75) {
+      fast_process(ip);
+    } else {
+      accelerated_process(ip);
     }
     break;
   case DEEP_ANALYSIS_PATH:
-    deep_analysis_processing(ip);
+    slow_process(ip);
     break;
   }
 
-  // Update or create flow entry
+  // Update flow pattern and validate ML
+  update_flow_pattern(flow, path);
+  validate_ml_prediction(flow, path);
+
+update_stats:
+  // Update flow statistics
   if (flow) {
     flow->hits++;
     flow->packet_count++;
     flow->last_seen = time(NULL);
-    flow->processing_time = get_current_time_us() - start_time;
+    flow->aging.last_access_time = flow->last_seen;
+    flow->aging.total_accesses++;
 
-    // Update rate calculations
-    double duration = time(NULL) - flow->first_seen + 1;
-    flow->avg_rate = flow->packet_count / duration;
+    // Smart confidence updates
+    if (flow->hits % 4 == 0 && flow->confidence < 100) {
+      double ml_score = enhanced_ml_predict(flow);
+      int base_boost = 4;
+      int ml_boost = (int)(ml_score * 6.0); // 0-6 additional boost
+      int total_boost = base_boost + ml_boost;
 
-    // Update variance (simplified)
-    double instant_rate = 1000000.0 / (get_current_time_us() - start_time);
-    flow->variance =
-        0.9 * flow->variance + 0.1 * pow(instant_rate - flow->avg_rate, 2);
+      flow->confidence = (flow->confidence + total_boost > 100)
+                             ? 100
+                             : flow->confidence + total_boost;
+      g_table->confidence_updates++;
+    }
 
-    flow->confidence =
-        fmin(MAX_CONFIDENCE, flow->confidence + CONFIDENCE_INCREMENT);
-    flow->flow_type = classify_flow_type(flow);
-  } else {
-    // Create new flow entry
-    AdvancedFlowEntry new_flow = {0};
-    new_flow.ip = ip;
-    new_flow.confidence = INITIAL_CONFIDENCE;
-    new_flow.hits = 1;
-    new_flow.packet_count = 1;
-    new_flow.first_seen = new_flow.last_seen = time(NULL);
-    new_flow.processing_time = get_current_time_us() - start_time;
-    new_flow.flow_type = UNKNOWN_FLOW;
-    new_flow.priority = priority;
+    // Enhanced flow type classification
+    if (flow->packet_count > 800 && flow->flow_type != LARGE_FLOW) {
+      flow->previous_type = flow->flow_type;
+      flow->flow_type = LARGE_FLOW;
+      flow->aging.aging_strategy = AGING_ADAPTIVE;
+    } else if (flow->pattern.burst_score > 0.6 && flow->hits > 10) {
+      if (flow->flow_type != BURSTY_FLOW && flow->flow_type != PROMOTED_FLOW) {
+        flow->previous_type = flow->flow_type;
+        flow->flow_type = BURSTY_FLOW;
+        flow->aging.aging_strategy = AGING_LINEAR;
+      }
+    } else if (flow->packet_count < 10 && flow->hits < 5) {
+      flow->flow_type = MICRO_FLOW;
+      flow->aging.aging_strategy = AGING_AGGRESSIVE;
+    }
 
-    // Add to appropriate area
-    if (is_burst && table->bursty_count < table->bursty_capacity) {
-      table->bursty_flow_area[table->bursty_count++] = new_flow;
-    } else if (table->micro_count < table->micro_capacity) {
-      table->micro_flow_area[table->micro_count++] = new_flow;
+    // Anomaly detection - simplified
+    if (flow->pattern.history_filled && flow->pattern.path_consistency < 0.3) {
+      if (flow->flow_type != SUSPECTED_FLOW && flow->hits > 8) {
+        flow->previous_type = flow->flow_type;
+        flow->flow_type = SUSPECTED_FLOW;
+      }
+    }
+
+    // Promotion score updates
+    if (path <= FAST_PATH) {
+      flow->promotion_score =
+          (flow->promotion_score < 950) ? flow->promotion_score + 10 : 1000;
+    } else if (path >= SLOW_PATH) {
+      flow->promotion_score =
+          (flow->promotion_score > 50) ? flow->promotion_score - 5 : 0;
     }
   }
 
-  // Update performance metrics
-  double processing_time = get_current_time_us() - start_time;
-  update_performance_monitor(processing_time);
+  g_table->total_processed++;
 
   // Periodic maintenance
-  table->total_processed++;
-  if (table->total_processed % 1000 == 0) {
-    adjust_thresholds(table);
-    age_flows(table);
+  if (g_table->total_processed % AGING_INTERVAL == 0) {
+    enhanced_aging_cycle();
   }
 
-  // Dequeue processed packet
-  dequeue_highest_priority();
+  if (g_table->total_processed % ML_ADAPTATION_INTERVAL == 0) {
+    adapt_ml_model();
+  }
 }
 
-// Read dataset (same as before)
-int *read_dataset(const char *filename, int *known_flows, int *num_packets,
-                  int *ip_range) {
-  FILE *fp = fopen(filename, "r");
-  if (!fp) {
-    perror("Error opening dataset.txt");
-    return NULL;
-  }
+// Advanced flow lifecycle management
+static inline void manage_flow_lifecycle() {
+  time_t now = time(NULL);
+  int promoted_count = 0;
+  int demoted_count = 0;
 
-  if (fscanf(fp, "%d %d %d", &INITIAL_KNOWN_SIZE, num_packets, ip_range) != 3) {
-    fprintf(stderr, "Error reading dataset header\n");
-    fclose(fp);
-    return NULL;
-  }
-  NUM_PACKETS = *num_packets;
-  IP_RANGE = *ip_range;
+  for (int i = 0; i < g_table->pool_index && i < 1000; i++) { // Limit scope
+    FlowEntry *flow = &g_table->flow_pool[i];
+    if (flow->ip == 0)
+      continue;
 
-  // Skip known flows
-  for (int i = 0; i < INITIAL_KNOWN_SIZE; i++) {
-    int tmp;
-    if (fscanf(fp, "%d", &tmp) != 1) {
-      fprintf(stderr, "Error reading known flows\n");
-      fclose(fp);
-      return NULL;
+    double idle_time = (double)(now - flow->last_seen);
+    double ml_score = enhanced_ml_predict(flow);
+
+    // Promote promising flows
+    if (flow->flow_type == NORMAL_FLOW && ml_score > 0.75 &&
+        flow->promotion_score > 700 && flow->hits > 8) {
+      flow->previous_type = flow->flow_type;
+      flow->flow_type = PROMOTED_FLOW;
+      flow->confidence = CONFIDENCE_FAST_TRACK;
+      promoted_count++;
     }
-    if (i < LARGE_FLOW_AREA_SIZE) {
-      known_flows[i] = tmp;
+
+    // Demote underperforming promoted flows
+    if (flow->flow_type == PROMOTED_FLOW &&
+        (ml_score < 0.4 || idle_time > 300 || flow->promotion_score < 200)) {
+      flow->flow_type = flow->previous_type;
+      flow->confidence = flow->confidence > 15 ? flow->confidence - 15 : 10;
+      demoted_count++;
+    }
+
+    // Age out dying flows
+    if (flow->flow_type == DYING_FLOW && idle_time > 900) { // 15 minutes
+      flow->confidence = 0;
+      // In a real system, we'd reclaim this entry
     }
   }
 
-  int *packets = (int *)malloc(NUM_PACKETS * sizeof(int));
-  for (int i = 0; i < NUM_PACKETS; i++) {
-    if (fscanf(fp, "%d", &packets[i]) != 1) {
-      fprintf(stderr, "Error reading packets\n");
-      fclose(fp);
-      return NULL;
-    }
-  }
-
-  fclose(fp);
-  return packets;
+  g_table->aging_manager->flows_promoted += promoted_count;
+  g_table->aging_manager->flows_demoted += demoted_count;
 }
 
-int main() {
-  // Initialize advanced systems
-  AdvancedHybridTable *table = init_advanced_table();
-  init_adaptive_queue(QUEUE_CAPACITY);
+// Enhanced statistics reporting
+static inline void print_enhanced_statistics() {
+  printf("\n=== ENHANCED ML & AGING STATISTICS ===\n");
 
-  int known_flows[LARGE_FLOW_AREA_SIZE] = {0};
-  int num_packets, ip_range;
-
-  // Read dataset
-  int *packets =
-      read_dataset("dataset.txt", known_flows, &num_packets, &ip_range);
-  if (!packets) {
-    return 1;
+  // ML Statistics
+  MLModel *model = g_table->ml_model;
+  double validation_accuracy = 0.0;
+  if (model->validation_samples > 0) {
+    validation_accuracy =
+        (double)model->validation_correct / model->validation_samples;
   }
 
-  printf("=== Advanced Hybrid Accelerated Flow Processor ===\n");
-  printf(
-      "Initializing with ML prediction, QoS, and adaptive thresholds...\n\n");
+  printf("ML Model Performance:\n");
+  printf("  Validation Accuracy: %.1f%% (%u correct / %u samples)\n",
+         validation_accuracy * 100.0, model->validation_correct,
+         model->validation_samples);
+  printf("  Learning Rate: %.6f\n", model->learning_rate);
+  printf("  Total ML Predictions: %llu\n", g_table->ml_predictions);
+  printf("  Prediction Cache Hit Rate: %.1f%% (%llu hits)\n",
+         g_table->ml_predictions > 0
+             ? 100.0 * g_table->ml_cache_hits / g_table->ml_predictions
+             : 0.0,
+         g_table->ml_cache_hits);
 
-  // Initialize known flows
-  for (int i = 0; i < INITIAL_KNOWN_SIZE && i < LARGE_FLOW_AREA_SIZE; i++) {
-    if (known_flows[i] != 0) {
-      AdvancedFlowEntry flow = {0};
-      flow.ip = known_flows[i];
-      flow.confidence = INITIAL_CONFIDENCE + 20; // Pre-known flows get bonus
-      flow.first_seen = flow.last_seen = time(NULL);
+  // Aging Statistics
+  AgingManager *manager = g_table->aging_manager;
+  printf("\nAging & Lifecycle Management:\n");
+  printf("  Memory Utilization: %.1f%% (%d / %d flows)\n",
+         manager->memory_utilization * 100.0, g_table->pool_index,
+         g_table->pool_size);
+  printf("  Aging Pressure: %.1f%%\n", manager->aging_pressure * 100.0);
+  printf("  Flows Promoted: %llu\n", manager->flows_promoted);
+  printf("  Flows Demoted: %llu\n", manager->flows_demoted);
+  printf("  Flows Aged Out: %llu\n", manager->flows_aged_out);
+  printf("  Current Burst Rate: %.1f packets/sec\n",
+         manager->current_burst_rate);
 
-      if (table->large_count < table->large_capacity) {
-        table->large_flow_area[table->large_count++] = flow;
+  // Performance counters
+  printf("\nPerformance Metrics:\n");
+  printf("  Ultra-fast Promotions: %llu\n", g_table->ultra_fast_promotions);
+  printf("  Confidence Updates: %llu\n", g_table->confidence_updates);
+  printf("  Pattern Updates: %llu\n", g_table->pattern_updates);
+
+  // Flow Type Distribution with enhanced metrics
+  int flow_type_counts[7] = {0};
+  double avg_confidence_by_type[7] = {0};
+  double avg_ml_score_by_type[7] = {0};
+  double avg_promotion_score_by_type[7] = {0};
+
+  for (int i = 0; i < g_table->pool_index; i++) {
+    FlowEntry *flow = &g_table->flow_pool[i];
+    if (flow->ip == 0)
+      continue;
+
+    int type = (int)flow->flow_type;
+    if (type >= 0 && type < 7) {
+      flow_type_counts[type]++;
+      avg_confidence_by_type[type] += flow->confidence;
+      avg_ml_score_by_type[type] += enhanced_ml_predict(flow);
+      avg_promotion_score_by_type[type] += flow->promotion_score;
+    }
+  }
+
+  const char *flow_type_names[] = {"Normal", "Large",    "Bursty",   "Micro",
+                                   "Dying",  "Promoted", "Suspected"};
+
+  printf("\nFlow Type Distribution:\n");
+  for (int i = 0; i < 7; i++) {
+    if (flow_type_counts[i] > 0) {
+      printf("  %-9s: %5d flows (%4.1f%%) | conf: %4.1f | ML: %.3f | promo: "
+             "%4.0f\n",
+             flow_type_names[i], flow_type_counts[i],
+             100.0 * flow_type_counts[i] / g_table->pool_index,
+             avg_confidence_by_type[i] / flow_type_counts[i],
+             avg_ml_score_by_type[i] / flow_type_counts[i],
+             avg_promotion_score_by_type[i] / flow_type_counts[i]);
+    }
+  }
+
+  // Pattern Analysis
+  double total_path_consistency = 0;
+  double total_burst_score = 0;
+  int flows_with_patterns = 0;
+  int high_consistency_flows = 0;
+
+  for (int i = 0; i < g_table->pool_index; i++) {
+    FlowEntry *flow = &g_table->flow_pool[i];
+    if (flow->ip == 0)
+      continue;
+
+    if (flow->pattern.history_filled || flow->pattern.history_index >= 4) {
+      total_path_consistency += flow->pattern.path_consistency;
+      total_burst_score += flow->pattern.burst_score;
+      flows_with_patterns++;
+
+      if (flow->pattern.path_consistency > 0.8) {
+        high_consistency_flows++;
       }
     }
   }
 
-  // Process packets with advanced analytics
-  long long path_counts[6] = {0}; // Count for each processing path
-  clock_t start = clock();
+  if (flows_with_patterns > 0) {
+    printf("\nPattern Analysis:\n");
+    printf("  Flows with Patterns: %d (%.1f%%)\n", flows_with_patterns,
+           100.0 * flows_with_patterns / g_table->pool_index);
+    printf("  Average Path Consistency: %.3f\n",
+           total_path_consistency / flows_with_patterns);
+    printf("  High Consistency Flows: %d (%.1f%%)\n", high_consistency_flows,
+           100.0 * high_consistency_flows / flows_with_patterns);
+    printf("  Average Burst Score: %.3f\n",
+           total_burst_score / flows_with_patterns);
+  }
+}
 
-  for (int i = 0; i < NUM_PACKETS; i++) {
-    int ip = packets[i];
-    ProcessingPath path = select_processing_path(ip, table);
-    path_counts[path]++;
+// Fast dataset reader with flexible filename
+int *read_dataset_fast(const char *fn, int *known, int *np, int *ir) {
+  FILE *f = fopen(fn, "r");
+  if (!f) {
+    fprintf(stderr, "Failed to open dataset file: %s\n", fn);
+    perror("Error details");
+    return NULL;
+  }
 
-    process_packet_advanced(ip, table);
+  if (fscanf(f, "%d %d %d", &INITIAL_KNOWN_SIZE, np, ir) != 3) {
+    fprintf(stderr, "Error reading dataset header from: %s\n", fn);
+    fclose(f);
+    return NULL;
+  }
 
-    // Progress indicator
-    if (i % 100000 == 0 && i > 0) {
-      printf("Processed %d packets (%.1f%%)...\n", i, 100.0 * i / NUM_PACKETS);
+  NUM_PACKETS = *np;
+  IP_RANGE = *ir;
+
+  printf("Dataset Info: Known=%d, Packets=%d, IP_Range=%d\n",
+         INITIAL_KNOWN_SIZE, NUM_PACKETS, IP_RANGE);
+
+  // Read known flows
+  for (int i = 0; i < INITIAL_KNOWN_SIZE; i++) {
+    int temp;
+    if (fscanf(f, "%d", &temp) != 1) {
+      fprintf(stderr, "Error reading known flow %d from: %s\n", i, fn);
+      fclose(f);
+      return NULL;
+    }
+    if (i < LARGE_FLOW_AREA_SIZE) {
+      known[i] = temp;
     }
   }
 
-  clock_t end = clock();
-  double total_time = (double)(end - start) / CLOCKS_PER_SEC;
+  // Read packet data
+  int *packets = malloc(NUM_PACKETS * sizeof(int));
+  if (!packets) {
+    fprintf(stderr, "Memory allocation failed for %d packets\n", NUM_PACKETS);
+    fclose(f);
+    return NULL;
+  }
 
-  // Comprehensive results
-  printf("\n=== Performance Results ===\n");
-  printf("Dataset: INITIAL_KNOWN_SIZE=%d, NUM_PACKETS=%d, IP_RANGE=%d\n\n",
-         INITIAL_KNOWN_SIZE, NUM_PACKETS, IP_RANGE);
+  for (int i = 0; i < NUM_PACKETS; i++) {
+    if (fscanf(f, "%d", &packets[i]) != 1) {
+      fprintf(stderr, "Error reading packet %d from: %s\n", i, fn);
+      free(packets);
+      fclose(f);
+      return NULL;
+    }
+  }
 
-  printf("Flow Table Status:\n");
-  printf("  Large flows: %d/%d\n", table->large_count, table->large_capacity);
-  printf("  Bursty flows: %d/%d\n", table->bursty_count,
-         table->bursty_capacity);
-  printf("  Micro flows: %d/%d\n", table->micro_count, table->micro_capacity);
-  printf("  Total flows tracked: %d\n\n",
-         table->large_count + table->bursty_count + table->micro_count);
+  fclose(f);
+  printf("Successfully loaded dataset: %s\n", fn);
+  return packets;
+}
 
-  printf("Processing Path Distribution:\n");
-  printf("  Ultra Fast Path: %lld (%.2f%%)\n", path_counts[0],
-         100.0 * path_counts[0] / NUM_PACKETS);
-  printf("  Fast Path: %lld (%.2f%%)\n", path_counts[1],
-         100.0 * path_counts[1] / NUM_PACKETS);
-  printf("  Accelerated Path: %lld (%.2f%%)\n", path_counts[2],
-         100.0 * path_counts[2] / NUM_PACKETS);
-  printf("  Adaptive Path: %lld (%.2f%%)\n", path_counts[3],
-         100.0 * path_counts[3] / NUM_PACKETS);
-  printf("  Slow Path: %lld (%.2f%%)\n", path_counts[4],
-         100.0 * path_counts[4] / NUM_PACKETS);
-  printf("  Deep Analysis: %lld (%.2f%%)\n\n", path_counts[5],
-         100.0 * path_counts[5] / NUM_PACKETS);
+// Usage function
+void print_usage(const char *program_name) {
+  printf("Enhanced ML-Driven Flow Processor v2.0\n");
+  printf("Usage: %s [dataset_file]\n\n", program_name);
+  printf("Arguments:\n");
+  printf(
+      "  dataset_file    Path to the dataset file (default: dataset.txt)\n\n");
+  printf("Examples:\n");
+  printf("  %s                           # Use default dataset.txt\n",
+         program_name);
+  printf("  %s tests/dataset_web.txt     # Test with web traffic\n",
+         program_name);
+  printf("  %s tests/dataset_ddos.txt    # Test with DDoS simulation\n",
+         program_name);
+  printf("  %s tests/dataset_gaming.txt  # Test with gaming traffic\n\n",
+         program_name);
+  printf("Available test datasets:\n");
+  printf("  dataset_uniform.txt      - Uniform random (baseline)\n");
+  printf("  dataset_web.txt         - Web traffic (Zipf 80/20)\n");
+  printf("  dataset_datacenter.txt  - Datacenter east-west\n");
+  printf("  dataset_ddos.txt        - DDoS attack simulation\n");
+  printf("  dataset_streaming.txt   - Video streaming\n");
+  printf("  dataset_iot.txt         - IoT sensor network\n");
+  printf("  dataset_gaming.txt      - Gaming traffic\n");
+  printf("  dataset_cdn.txt         - CDN edge traffic\n");
+  printf("  dataset_enterprise.txt  - Enterprise mixed\n");
+  printf("  dataset_pareto.txt      - Pareto heavy-tail\n");
+}
 
-  printf("Cache Performance:\n");
-  printf("  Cache hits: %lld\n", table->cache_hits);
-  printf("  Cache misses: %lld\n", table->cache_misses);
-  printf("  Hit ratio: %.2f%%\n\n",
-         100.0 * table->cache_hits / (table->cache_hits + table->cache_misses));
+int main(int argc, char *argv[]) {
+  // Handle command line arguments
+  const char *dataset_file = "dataset.txt"; // Default
 
-  printf("Queue Statistics:\n");
-  printf("  Packets dropped: %d\n", pkt_queue.drop_count);
-  printf("  Final queue size: %d\n", pkt_queue.size);
-  printf("  Burst intensity: %.2f\n", pkt_queue.burst_intensity);
-  printf("  EWMA rate: %.2f pps\n\n", pkt_queue.ewma_rate);
+  if (argc > 2) {
+    printf("Error: Too many arguments\n\n");
+    print_usage(argv[0]);
+    return 1;
+  }
 
-  printf("Performance Metrics:\n");
-  printf("  Total time: %.3f seconds\n", total_time);
-  printf("  Throughput: %.2f Mpps\n", NUM_PACKETS / total_time / 1000000.0);
-  printf("  Latency P50: %.2f μs\n", perf_monitor.latency_p50);
-  printf("  Latency P95: %.2f μs\n", perf_monitor.latency_p95);
-  printf("  Latency P99: %.2f μs\n", perf_monitor.latency_p99);
+  if (argc == 2) {
+    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+      print_usage(argv[0]);
+      return 0;
+    }
+    dataset_file = argv[1];
+  }
 
-  printf("\nOptimizations applied:\n");
-  printf("  ✓ Multi-tier processing paths\n");
-  printf("  ✓ ML-based flow prediction\n");
-  printf("  ✓ QoS-aware packet scheduling\n");
-  printf("  ✓ Adaptive burst detection\n");
-  printf("  ✓ LRU caching\n");
-  printf("  ✓ Count-Min sketch monitoring\n");
-  printf("  ✓ Dynamic threshold adjustment\n");
-  printf("  ✓ Flow aging and eviction\n");
-  printf("  ✓ Priority-based queue management\n");
-  printf("  ✓ Real-time performance monitoring\n");
+  printf("=== Enhanced ML-Driven Flow Processor v2.0 ===\n");
+  printf("Dataset: %s\n", dataset_file);
+  printf("Initializing optimized data structures...\n\n");
+
+  g_table = init_optimized_table();
+  if (!g_table) {
+    fprintf(stderr, "Failed to initialize table\n");
+    return 1;
+  }
+
+  int known[LARGE_FLOW_AREA_SIZE] = {0};
+  int np, ir;
+  int *packets = read_dataset_fast(dataset_file, known, &np, &ir);
+  if (!packets) {
+    fprintf(stderr, "Failed to read dataset: %s\n", dataset_file);
+    fprintf(stderr, "Make sure the file exists and is in the correct format\n");
+    return 1;
+  }
+
+  // Pre-populate known flows with enhanced initialization
+  printf("Pre-populating %d known flows...\n", INITIAL_KNOWN_SIZE);
+  for (int i = 0; i < INITIAL_KNOWN_SIZE && i < LARGE_FLOW_AREA_SIZE; i++) {
+    if (known[i] > 0) {
+      FlowEntry *flow = create_flow_fast((uint32_t)known[i]);
+      if (flow) {
+        flow->confidence = 75; // Higher starting confidence for known flows
+        flow->hits = 12;
+        flow->packet_count = 15;
+        flow->flow_type = LARGE_FLOW;
+        flow->aging.aging_strategy = AGING_ADAPTIVE;
+        flow->promotion_score = 800; // High promotion potential
+
+        // Initialize with good patterns
+        flow->pattern.path_consistency = 0.85;
+        flow->pattern.burst_score = 0.15;
+        flow->pattern.consecutive_fast_paths = 5;
+      }
+    }
+  }
+
+  printf("Processing %d packets with enhanced ML and aging...\n", NUM_PACKETS);
+  printf("Configuration: BURST_THRESHOLD=%d, ML_FEATURES=%d, CACHE_SIZE=%d\n\n",
+         BURST_THRESHOLD, ML_FEATURE_COUNT, CACHE_SIZE);
+
+  clock_t start_time = clock();
+
+  for (int i = 0; i < NUM_PACKETS; i++) {
+    process_packet_optimized((uint32_t)packets[i]);
+
+    // Periodic lifecycle management (less frequent)
+    if (i % 100000 == 0 && i > 0) {
+      manage_flow_lifecycle();
+    }
+
+    if (i % 200000 == 0 && i > 0) {
+      printf("Processed %d packets (%.1f%%) | Flows: %d | Cache hit: %.1f%%\n",
+             i, 100.0 * i / NUM_PACKETS, g_table->pool_index,
+             100.0 * g_table->cache_hits /
+                 (g_table->cache_hits + g_table->cache_misses));
+    }
+  }
+
+  clock_t end_time = clock();
+  double total_seconds = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+
+  // Final lifecycle management
+  manage_flow_lifecycle();
+
+  printf("\n=== ENHANCED RESULTS ===\n");
+  printf("Dataset: %s\n", dataset_file);
+  printf("Parameters: KNOWN=%d, PACKETS=%d, IP_RANGE=%d\n", INITIAL_KNOWN_SIZE,
+         NUM_PACKETS, IP_RANGE);
+  printf("Total Processing Time: %.3f seconds\n", total_seconds);
+  printf("Throughput: %.2f Mpps (%.0f packets/sec)\n",
+         NUM_PACKETS / total_seconds / 1e6, NUM_PACKETS / total_seconds);
+  printf("Average Packet Time: %.2f ns\n", total_seconds * 1e9 / NUM_PACKETS);
+  printf("Total Flows Created: %d (%.2f%% of pool)\n", g_table->pool_index,
+         100.0 * g_table->pool_index / g_table->pool_size);
+
+  // Processing path distribution
+  const char *path_names[] = {"Fast", "Accelerated", "Ultra-Fast",
+                              "Slow", "Adaptive",    "Deep"};
+  printf("\nProcessing Path Distribution:\n");
+  for (int i = 0; i < 6; i++) {
+    printf("  %-12s: %8llu (%5.2f%%)\n", path_names[i], g_table->path_counts[i],
+           100.0 * g_table->path_counts[i] / NUM_PACKETS);
+  }
+
+  // Cache and hash performance
+  uint64_t total_cache_ops = g_table->cache_hits + g_table->cache_misses;
+  printf("\nCache & Hash Performance:\n");
+  printf("  Cache Hit Rate: %.2f%% (%llu / %llu)\n",
+         100.0 * g_table->cache_hits / total_cache_ops, g_table->cache_hits,
+         total_cache_ops);
+  printf("  Hash Collision Rate: %.2f%% (%llu / %llu)\n",
+         100.0 * g_table->hash_table->collision_count /
+             g_table->hash_table->total_lookups,
+         g_table->hash_table->collision_count,
+         g_table->hash_table->total_lookups);
+
+  // Print detailed statistics
+  print_enhanced_statistics();
 
   // Cleanup
-  free(table->large_flow_area);
-  free(table->bursty_flow_area);
-  free(table->micro_flow_area);
-  free(table->sketch);
-  free(table->lru_cache);
-  free(table);
+  free(g_table->hash_table);
+  free(g_table->sketch);
+  free(g_table->ml_model);
+  free(g_table->aging_manager);
+  free(g_table->flow_pool);
+  free(g_table);
   free(packets);
-  free(pkt_queue.queue);
-  free(pkt_queue.priorities);
-  free(pkt_queue.timestamps);
 
+  printf("\n=== Processing Complete ===\n");
   return 0;
 }
